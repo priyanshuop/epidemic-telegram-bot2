@@ -1,6 +1,8 @@
+from http.server import BaseHTTPRequestHandler
+import json
 import os
+
 import httpx
-from urllib.parse import quote
 
 
 TELEGRAM_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
@@ -10,16 +12,20 @@ TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 EPIDEMIC_API = "https://partner-content-api.epidemicsound.com"
 
 
-async def telegram(method, data):
-    async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.post(
-            f"{TELEGRAM_API}/{method}",
-            json=data
-        )
-        return response.json()
+def telegram(method, data):
+    response = httpx.post(
+        f"{TELEGRAM_API}/{method}",
+        json=data,
+        timeout=30,
+    )
+
+    response.raise_for_status()
+
+    return response.json()
 
 
-async def epidemic_search(term):
+def search_epidemic(term):
+
     headers = {
         "Authorization": f"Bearer {EPIDEMIC_KEY}",
         "Accept": "application/json",
@@ -32,18 +38,20 @@ async def epidemic_search(term):
         "sort": "Relevance",
     }
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.get(
-            f"{EPIDEMIC_API}/v0/tracks/search",
-            headers=headers,
-            params=params,
-        )
+    response = httpx.get(
+        f"{EPIDEMIC_API}/v0/tracks/search",
+        headers=headers,
+        params=params,
+        timeout=30,
+    )
 
     response.raise_for_status()
+
     return response.json()
 
 
 def get_artist(track):
+
     artist = track.get("artist")
 
     if isinstance(artist, str):
@@ -52,21 +60,28 @@ def get_artist(track):
     artists = track.get("artists", [])
 
     if isinstance(artists, list):
+
         names = []
 
         for item in artists:
+
             if isinstance(item, str):
                 names.append(item)
-            elif isinstance(item, dict):
-                names.append(item.get("name", "Unknown"))
 
-        return ", ".join(names)
+            elif isinstance(item, dict):
+                names.append(
+                    item.get("name", "Unknown")
+                )
+
+        if names:
+            return ", ".join(names)
 
     return "Unknown"
 
 
-async def send_message(chat_id, text):
-    return await telegram(
+def send_message(chat_id, text):
+
+    return telegram(
         "sendMessage",
         {
             "chat_id": chat_id,
@@ -76,75 +91,98 @@ async def send_message(chat_id, text):
     )
 
 
-async def handle_update(update):
+def handle_update(update):
+
     message = update.get("message")
 
     if not message:
         return
 
     chat_id = message["chat"]["id"]
-    text = message.get("text", "").strip()
 
+    text = message.get(
+        "text",
+        "",
+    ).strip()
+
+    # -------------------------
     # /start
+    # -------------------------
+
     if text == "/start":
 
-        await send_message(
+        send_message(
             chat_id,
             "🎵 <b>Welcome to Music Bot!</b>\n\n"
-            "Search Epidemic Sound music using:\n\n"
-            "<code>/search relaxing piano</code>\n\n"
+            "I can search the Epidemic Sound catalog.\n\n"
             "Try:\n"
-            "• relaxing piano\n"
+            "<code>/search relaxing piano</code>\n\n"
+            "Other examples:\n"
             "• cinematic music\n"
             "• upbeat electronic\n"
-            "• acoustic guitar",
+            "• acoustic guitar\n"
+            "• relaxing music",
         )
 
         return
 
+    # -------------------------
     # /help
+    # -------------------------
+
     if text == "/help":
 
-        await send_message(
+        send_message(
             chat_id,
-            "🎧 <b>Music Bot Help</b>\n\n"
-            "<code>/search YOUR QUERY</code>\n\n"
+            "🎧 <b>Music Bot</b>\n\n"
+            "Use:\n"
+            "<code>/search your query</code>\n\n"
             "Example:\n"
-            "<code>/search cinematic</code>",
+            "<code>/search cinematic music</code>",
         )
 
         return
 
+    # -------------------------
     # /search
+    # -------------------------
+
     if text.startswith("/search"):
 
-        search_term = text[7:].strip()
+        search_term = text[
+            len("/search"):
+        ].strip()
 
         if not search_term:
 
-            await send_message(
+            send_message(
                 chat_id,
-                "❌ Please enter something to search.\n\n"
+                "❌ Please enter a search query.\n\n"
                 "Example:\n"
                 "<code>/search relaxing piano</code>",
             )
 
             return
 
-        await send_message(
+        send_message(
             chat_id,
             "🔎 Searching Epidemic Sound..."
         )
 
         try:
 
-            data = await epidemic_search(search_term)
+            data = search_epidemic(
+                search_term
+            )
 
-            tracks = data.get("tracks", [])
+            tracks = data.get(
+                "tracks",
+                []
+            )
 
             if not tracks:
 
-                await send_message(
+                send_message(
                     chat_id,
                     "❌ No tracks found."
                 )
@@ -158,19 +196,21 @@ async def handle_update(update):
 
             for number, track in enumerate(
                 tracks,
-                start=1
+                start=1,
             ):
 
                 title = track.get(
                     "title",
-                    "Unknown title"
+                    "Unknown",
                 )
 
-                artist = get_artist(track)
+                artist = get_artist(
+                    track
+                )
 
                 track_id = track.get(
                     "id",
-                    "Unknown"
+                    "Unknown",
                 )
 
                 result += (
@@ -180,53 +220,105 @@ async def handle_update(update):
                     f"🆔 <code>{track_id}</code>\n\n"
                 )
 
-            result += (
-                "ℹ️ Use the track ID with the "
-                "download feature in the next version."
-            )
-
-            await send_message(
+            send_message(
                 chat_id,
-                result
+                result,
             )
 
         except Exception as error:
 
-            print("Epidemic API error:", error)
+            print(
+                "Epidemic API error:",
+                error,
+            )
 
-            await send_message(
+            send_message(
                 chat_id,
-                "❌ Something went wrong while "
-                "searching the music catalog."
+                "❌ Epidemic Sound search failed.\n\n"
+                "Please check your API access.",
             )
 
         return
 
-    # Unknown command
-    await send_message(
+    # -------------------------
+    # Unknown message
+    # -------------------------
+
+    send_message(
         chat_id,
-        "❓ I don't understand that command.\n\n"
-        "Try <code>/search relaxing piano</code>"
+        "❓ Unknown command.\n\n"
+        "Try:\n"
+        "<code>/search relaxing piano</code>",
     )
 
 
-async def process_request(request):
+class handler(BaseHTTPRequestHandler):
 
-    try:
-        update = request.get_json()
-    except Exception:
-        return {
-            "statusCode": 400,
-            "body": "Invalid JSON",
-        }
+    def do_GET(self):
 
-    await handle_update(update)
+        self.send_response(200)
 
-    return {
-        "statusCode": 200,
-        "body": "OK",
-    }
+        self.send_header(
+            "Content-Type",
+            "text/plain",
+        )
 
+        self.end_headers()
 
-async def handler(request):
-    return await process_request(request)
+        self.wfile.write(
+            b"Music Bot is running!"
+        )
+
+    def do_POST(self):
+
+        try:
+
+            content_length = int(
+                self.headers.get(
+                    "Content-Length",
+                    0,
+                )
+            )
+
+            body = self.rfile.read(
+                content_length
+            )
+
+            update = json.loads(
+                body.decode("utf-8")
+            )
+
+            handle_update(update)
+
+            self.send_response(200)
+
+            self.send_header(
+                "Content-Type",
+                "application/json",
+            )
+
+            self.end_headers()
+
+            self.wfile.write(
+                b'{"ok":true}'
+            )
+
+        except Exception as error:
+
+            print(
+                "Webhook error:",
+                error,
+            )
+
+            self.send_response(500)
+
+            self.send_header(
+                "Content-Type",
+                "application/json",
+            )
+
+            self.end_headers()
+
+            self.wfile.write(
+                b'{"ok":false}'
+            )
