@@ -4,12 +4,26 @@ import os
 import html
 import httpx
 
+
+# =========================
+# ENVIRONMENT VARIABLES
+# =========================
+
 TELEGRAM_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 EPIDEMIC_KEY = os.environ["EPIDEMIC_API_KEY"]
+
+
+# =========================
+# API URLs
+# =========================
 
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 EPIDEMIC_API = "https://partner-content-api.epidemicsound.com"
 
+
+# =========================
+# TELEGRAM API
+# =========================
 
 def telegram(method, data):
     response = httpx.post(
@@ -17,11 +31,18 @@ def telegram(method, data):
         json=data,
         timeout=30,
     )
+
     response.raise_for_status()
+
     return response.json()
 
 
+# =========================
+# EPIDEMIC SOUND SEARCH
+# =========================
+
 def search_epidemic(term):
+
     headers = {
         "Authorization": f"Bearer {EPIDEMIC_KEY}",
         "Accept": "application/json",
@@ -42,10 +63,16 @@ def search_epidemic(term):
     )
 
     response.raise_for_status()
+
     return response.json()
 
 
+# =========================
+# GET ARTIST
+# =========================
+
 def get_artist(track):
+
     artist = track.get("artist")
 
     if isinstance(artist, str):
@@ -57,13 +84,16 @@ def get_artist(track):
     artists = track.get("artists", [])
 
     if isinstance(artists, list):
+
         names = []
 
         for item in artists:
+
             if isinstance(item, str):
                 names.append(item)
 
             elif isinstance(item, dict):
+
                 name = item.get("name")
 
                 if name:
@@ -75,7 +105,12 @@ def get_artist(track):
     return "Unknown"
 
 
+# =========================
+# SEND TELEGRAM MESSAGE
+# =========================
+
 def send_message(chat_id, text, buttons=None):
+
     data = {
         "chat_id": chat_id,
         "text": text,
@@ -83,12 +118,20 @@ def send_message(chat_id, text, buttons=None):
     }
 
     if buttons:
+
         data["reply_markup"] = {
             "inline_keyboard": buttons
         }
 
-    return telegram("sendMessage", data)
+    return telegram(
+        "sendMessage",
+        data
+    )
 
+
+# =========================
+# HANDLE TELEGRAM UPDATE
+# =========================
 
 def handle_update(update):
 
@@ -98,63 +141,104 @@ def handle_update(update):
         return
 
     chat_id = message["chat"]["id"]
-    text = message.get("text", "").strip()
 
+    text = message.get(
+        "text",
+        ""
+    ).strip()
+
+
+    # =========================
     # /start
+    # =========================
+
     if text == "/start":
 
         send_message(
             chat_id,
+
             "🎵 <b>Welcome to Music Bot!</b>\n\n"
-            "Search the Epidemic Sound catalog directly from Telegram.\n\n"
-            "🔎 <b>Try:</b>\n"
+
+            "Search the Epidemic Sound catalog "
+            "directly from Telegram.\n\n"
+
+            "🔎 <b>Try:</b>\n\n"
+
             "<code>/search cinematic music</code>\n\n"
+
             "<code>/search relaxing piano</code>\n\n"
-            "<code>/search upbeat electronic</code>",
+
+            "<code>/search upbeat electronic</code>"
         )
 
         return
 
+
+    # =========================
     # /help
+    # =========================
+
     if text == "/help":
 
         send_message(
             chat_id,
+
             "🎧 <b>Music Bot Help</b>\n\n"
+
             "Use:\n"
             "<code>/search your query</code>\n\n"
+
             "Example:\n"
-            "<code>/search cinematic music</code>",
+            "<code>/search cinematic music</code>"
         )
 
         return
 
+
+    # =========================
     # /search
+    # =========================
+
     if text.startswith("/search"):
 
-        search_term = text[len("/search"):].strip()
+        search_term = text[
+            len("/search"):
+        ].strip()
+
 
         if not search_term:
 
             send_message(
                 chat_id,
+
                 "❌ <b>Search query missing</b>\n\n"
+
                 "Example:\n"
-                "<code>/search relaxing piano</code>",
+                "<code>/search relaxing piano</code>"
             )
 
             return
+
+
+        # Searching message
 
         send_message(
             chat_id,
             "🔎 <b>Searching Epidemic Sound...</b>"
         )
 
+
         try:
 
-            data = search_epidemic(search_term)
+            data = search_epidemic(
+                search_term
+            )
 
-            tracks = data.get("tracks", [])
+            tracks = data.get(
+                "tracks",
+                []
+            )
+
 
             if not tracks:
 
@@ -165,34 +249,67 @@ def handle_update(update):
 
                 return
 
-            for number, track in enumerate(tracks, start=1):
+
+            # =========================
+            # SEND EACH TRACK
+            # =========================
+
+            for number, track in enumerate(
+                tracks,
+                start=1
+            ):
 
                 title = html.escape(
-                    str(track.get("title", "Unknown"))
+                    str(
+                        track.get(
+                            "title",
+                            "Unknown"
+                        )
+                    )
                 )
 
                 artist = html.escape(
-                    str(get_artist(track))
+                    str(
+                        get_artist(track)
+                    )
                 )
 
-                track_id = track.get("id")
+                track_id = track.get(
+                    "id"
+                )
+
+
+                # Clean result
 
                 message_text = (
+
                     f"🎵 <b>{title}</b>\n\n"
-                    f"👤 <b>Artist:</b> {artist}\n"
-                    f"🎧 <b>Track:</b> {number}"
+
+                    f"👤 <b>Artist:</b> "
+                    f"{artist}\n\n"
+
+                    f"🎧 <b>Result:</b> "
+                    f"{number}"
                 )
+
 
                 buttons = []
 
+
+                # Preview button
+
                 if track_id:
 
-                    buttons.append([
-                        {
-                            "text": "🎧 Preview",
-                            "callback_data": f"preview:{track_id}"
-                        }
-                    ])
+                    buttons.append(
+                        [
+                            {
+                                "text": "🎧 Preview",
+                                "callback_data":
+                                f"preview:{track_id}"
+                            }
+                        ]
+                    )
+
 
                 send_message(
                     chat_id,
@@ -200,28 +317,51 @@ def handle_update(update):
                     buttons
                 )
 
+
         except Exception as error:
 
-            print("Epidemic API error:", error)
+            print(
+                "Epidemic API error:",
+                error
+            )
+
 
             send_message(
                 chat_id,
-                "❌ <b>Epidemic Sound search failed.</b>\n\n"
+
+                "❌ <b>Epidemic Sound "
+                "search failed.</b>\n\n"
+
                 "Please check your API access."
             )
 
         return
 
-    # Unknown command
+
+    # =========================
+    # UNKNOWN COMMAND
+    # =========================
+
     send_message(
         chat_id,
+
         "❓ <b>Unknown command</b>\n\n"
+
         "Try:\n"
         "<code>/search relaxing piano</code>"
     )
 
 
+# =========================
+# VERCEL HANDLER
+# =========================
+
 class handler(BaseHTTPRequestHandler):
+
+
+    # =========================
+    # GET REQUEST
+    # =========================
 
     def do_GET(self):
 
@@ -236,3 +376,73 @@ class handler(BaseHTTPRequestHandler):
 
         self.wfile.write(
             b"Music Bot is running!"
+        )
+
+
+    # =========================
+    # POST REQUEST
+    # =========================
+
+    def do_POST(self):
+
+        try:
+
+            content_length = int(
+                self.headers.get(
+                    "Content-Length",
+                    0
+                )
+            )
+
+
+            body = self.rfile.read(
+                content_length
+            )
+
+
+            update = json.loads(
+                body.decode("utf-8")
+            )
+
+
+            handle_update(
+                update
+            )
+
+
+            self.send_response(200)
+
+            self.send_header(
+                "Content-Type",
+                "application/json"
+            )
+
+            self.end_headers()
+
+
+            self.wfile.write(
+                b'{"ok":true}'
+            )
+
+
+        except Exception as error:
+
+            print(
+                "Webhook error:",
+                error
+            )
+
+
+            self.send_response(500)
+
+            self.send_header(
+                "Content-Type",
+                "application/json"
+            )
+
+            self.end_headers()
+
+
+            self.wfile.write(
+                b'{"ok":false}'
+            )
